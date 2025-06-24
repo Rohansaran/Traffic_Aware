@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>
+      Delhi-Meerut Interactive Route Optimizer with Traffic Avoidance
+    </title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+
+    <style>
+      :root {
+        --primary-color: #2c3e50;
+        --secondary-color: #3498db;
+        --background-color: #f5f6fa;
+        --border-color: #dcdde1;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        margin: 0;
+        padding: 20px;
+        background-color: var(--background-color);
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+
+      .control-panel,
+      .traffic-controls {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+
+      .traffic-controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+      }
+
+      .traffic-control-item {
+        padding: 10px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+      }
+
+      .settings-panel {
+        margin-top: 20px;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 4px;
+      }
+
+      .traffic-slider {
+        width: 100%;
+        margin: 10px 0;
+      }
+
+      .traffic-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 5px;
+      }
+
+      .traffic-value {
+        padding: 2px 8px;
+        border-radius: 4px;
+        color: white;
+        font-size: 14px;
+      }
+
+      .visualization {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 20px;
+        margin-top: 20px;
+      }
+
+      .route-display {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        height: 400px;
+        position: relative;
+      }
+
+      #routeCanvas {
+        position: absolute;
+        top: 100;
+        left: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .stats-panel {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .stats-item {
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      button {
+        background-color: var(--secondary-color);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background-color 0.3s;
+      }
+
+      button:hover {
+        background-color: #2980b9;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 20px;
+        background-color: #eee;
+        border-radius: 10px;
+        overflow: hidden;
+        margin-top: 10px;
+      }
+
+      .progress-fill {
+        width: 0%;
+        height: 100%;
+        background-color: var(--secondary-color);
+        transition: width 0.3s ease;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Delhi-Meerut Interactive Route Optimizer</h1>
+        <p>
+          Adjust traffic conditions and find optimal routes with traffic
+          avoidance
+        </p>
+      </div>
+
+      <div class="settings-panel">
+        <label>
+          Traffic Avoidance Threshold:
+          <input
+            type="range"
+            id="trafficThreshold"
+            min="1.2"
+            max="2"
+            step="0.1"
+            value="1.5"
+          />
+          <span id="thresholdValue">1.5</span>
+        </label>
+      </div>
+
+      <div class="traffic-controls" id="trafficControls">
+        <!-- Traffic control sliders will be generated here -->
+      </div>
+
+      <div class="control-panel">
+        <button id="startBtn" onclick="startOptimization()">
+          Calculate Optimal Route
+        </button>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressBar"></div>
+        </div>
+      </div>
+
+      <div class="visualization">
+        <div class="route-display">
+          <canvas id="routeCanvas"></canvas>
+        </div>
+        <div class="stats-panel">
+          <div class="stats-item">
+            <div class="stats-label">Estimated Travel Time</div>
+            <div class="stats-value" id="bestDistance">0.00 mins</div>
+          </div>
+          <div class="stats-item">
+            <div class="stats-label">Current Route</div>
+            <div class="stats-value" id="currentRoute">-</div>
+          </div>
+          <div class="stats-item">
+            <div class="stats-label">Avoided High Traffic Areas</div>
+            <div class="stats-value" id="avoidedSegments">-</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Define locations with additional connections for alternate routes
+      const locations = [
+        { name: "ISBT Delhi", x: 100, y: 350, isFixed: true },
+        { name: "Anand Vihar", x: 150, y: 320 },
+        { name: "Ghaziabad", x: 200, y: 300 },
+        { name: "Sahibabad", x: 250, y: 280 },
+        { name: "Duhai", x: 300, y: 250 },
+        { name: "Muradnagar", x: 350, y: 200 },
+        { name: "Modinagar", x: 450, y: 250 },
+        { name: "Meerut Bypass", x: 550, y: 200 },
+        { name: "Partapur", x: 500, y: 180 },
+        { name: "Meerut Bus Stand", x: 700, y: 150, isFixed: true },
+      ];
+
+      // Enhanced connections with more route options
+      const connections = new Map([
+        ["ISBT Delhi", ["Anand Vihar", "Ghaziabad", "Sahibabad"]],
+        ["Anand Vihar", ["ISBT Delhi", "Ghaziabad", "Sahibabad"]],
+        [
+          "Ghaziabad",
+          ["ISBT Delhi", "Anand Vihar", "Sahibabad", "Duhai", "Partapur"],
+        ],
+        ["Sahibabad", ["ISBT Delhi", "Anand Vihar", "Ghaziabad", "Duhai"]],
+        ["Duhai", ["Ghaziabad", "Sahibabad", "Muradnagar", "Partapur"]],
+        ["Muradnagar", ["Duhai", "Modinagar", "Partapur"]],
+        ["Modinagar", ["Muradnagar", "Partapur"]],
+        ["Meerut Bypass", ["Muradnagar", "Modinagar", "Partapur"]],
+        ["Partapur", ["Modinagar", "Meerut Bypass"]],
+        ["Meerut Bypass", ["Partapur", "Meerut Bus Stand"]],
+        ["Partapur", ["Meerut Bypass"]],
+        ["Meerut Bus Stand", []],
+      ]);
+
+      // Initialize traffic conditions
+      let trafficConditions = new Map();
+      let trafficThreshold = 1.5;
+
+      function initializeTrafficControls() {
+        const container = document.getElementById("trafficControls");
+        container.innerHTML = "";
+
+        // Add connections for each possible route
+        connections.forEach((connectedCities, fromCity) => {
+          connectedCities.forEach((toCity) => {
+            const routeKey = `${fromCity}-${toCity}`;
+            if (!trafficConditions.has(routeKey)) {
+              // Create traffic control item
+              const controlItem = document.createElement("div");
+              controlItem.className = "traffic-control-item";
+
+              // Create label with value display
+              const labelDiv = document.createElement("div");
+              labelDiv.className = "traffic-label";
+              labelDiv.innerHTML = `
+                <span>${fromCity} → ${toCity}</span>
+                <span id="value-${routeKey}" class="traffic-value">Normal</span>
+              `;
+
+              // Create slider
+              const slider = document.createElement("input");
+              slider.type = "range";
+              slider.min = "0.5";
+              slider.max = "2";
+              slider.step = "0.1";
+              slider.value = "1";
+              slider.className = "traffic-slider";
+
+              // Set initial traffic condition
+              trafficConditions.set(routeKey, 1);
+
+              // Add event listener
+              slider.addEventListener("input", (e) => {
+                const value = parseFloat(e.target.value);
+                trafficConditions.set(routeKey, value);
+                updateTrafficDisplay(routeKey, value);
+              });
+
+              controlItem.appendChild(labelDiv);
+              controlItem.appendChild(slider);
+              container.appendChild(controlItem);
+
+              updateTrafficDisplay(routeKey, 1);
+            }
+          });
+        });
+
+        // Add threshold slider listener
+        document
+          .getElementById("trafficThreshold")
+          .addEventListener("input", (e) => {
+            trafficThreshold = parseFloat(e.target.value);
+            document.getElementById("thresholdValue").textContent =
+              trafficThreshold.toFixed(1);
+          });
+      }
+
+      function updateTrafficDisplay(routeKey, value) {
+        const valueDisplay = document.getElementById(`value-${routeKey}`);
+        let text, color;
+
+        if (value < 0.8) {
+          text = "Low Traffic";
+          color = "#2ecc71";
+        } else if (value < 1.2) {
+          text = "Normal";
+          color = "#f1c40f";
+        } else {
+          text = "High Traffic";
+          color = "#e74c3c";
+        }
+
+        valueDisplay.textContent = text;
+        valueDisplay.style.backgroundColor = color;
+      }
+
+      class Route {
+        constructor(path) {
+          this.path = path;
+          this.travelTime = this.calculateTravelTime();
+          this.avoidedSegments = this.countAvoidedSegments();
+        }
+
+        calculateTravelTime() {
+          let totalTime = 0;
+          for (let i = 0; i < this.path.length - 1; i++) {
+            const from = this.path[i];
+            const to = this.path[i + 1];
+            const traffic = trafficConditions.get(`${from.name}-${to.name}`);
+            const distance = Math.sqrt(
+              Math.pow(to.x - from.x, 2) + Math.pow(to.y - from.y, 2)
+            );
+            totalTime += distance * traffic;
+          }
+          return totalTime;
+          console.log(totalTime);
+        }
+
+        countAvoidedSegments() {
+          let avoided = 0;
+          for (let i = 0; i < this.path.length - 1; i++) {
+            const from = this.path[i];
+            const to = this.path[i + 1];
+            const traffic = trafficConditions.get(`${from.name}-${to.name}`);
+            if (traffic >= trafficThreshold) {
+              avoided++;
+            }
+          }
+          return avoided;
+        }
+      }
+
+      class RouteOptimizer {
+        constructor() {
+          this.population = this.initializePopulation();
+          this.bestRoute = null;
+        }
+
+        findLocation(name) {
+          return locations.find((loc) => loc.name === name);
+        }
+
+        generateValidPath() {
+          const path = [this.findLocation("ISBT Delhi")];
+          let current = "ISBT Delhi";
+
+          while (current !== "Meerut Bus Stand") {
+            const possibleNext = connections.get(current);
+            const unvisitedNext = possibleNext.filter(
+              (city) => !path.some((loc) => loc.name === city)
+            );
+
+            if (unvisitedNext.length === 0) {
+              // If stuck, allow revisiting cities
+              const validNext = possibleNext.filter(
+                (city) =>
+                  city === "Meerut Bus Stand" ||
+                  path.filter((loc) => loc.name === city).length < 2
+              );
+              if (validNext.length === 0) return null;
+              current = validNext[Math.floor(Math.random() * validNext.length)];
+            } else {
+              current =
+                unvisitedNext[Math.floor(Math.random() * unvisitedNext.length)];
+            }
+
+            path.push(this.findLocation(current));
+          }
+
+          return path;
+        }
+
+        initializePopulation() {
+          const population = [];
+
+          while (population.length < 20) {
+            const path = this.generateValidPath();
+            if (path) {
+              population.push(new Route(path));
+            }
+          }
+
+          return population;
+        }
+
+        evolve() {
+          const newPopulation = [];
+
+          while (newPopulation.length < 20) {
+            const parent1 = this.selectParent();
+            const parent2 = this.selectParent();
+            let child = this.crossover(parent1, parent2);
+
+            if (Math.random() < 0.3) {
+              child = this.mutate(child);
+            }
+
+            if (this.isValidPath(child.path)) {
+              newPopulation.push(child);
+            }
+          }
+
+          this.population = newPopulation;
+          const currentBest = this.findBestRoute();
+          if (
+            !this.bestRoute ||
+            currentBest.travelTime < this.bestRoute.travelTime
+          ) {
+            this.bestRoute = currentBest;
+          }
+        }
+
+        isValidPath(path) {
+          for (let i = 0; i < path.length - 1; i++) {
+            const from = path[i].name;
+            const to = path[i + 1].name;
+            if (!connections.get(from).includes(to)) {
+              return false;
+            }
+          }
+          return true;
+        }
+
+        selectParent() {
+          const tournamentSize = 5;
+          let best =
+            this.population[Math.floor(Math.random() * this.population.length)];
+
+          for (let i = 0; i < tournamentSize - 1; i++) {
+            const contestant =
+              this.population[
+                Math.floor(Math.random() * this.population.length)
+              ];
+            if (contestant.travelTime < best.travelTime) {
+              best = contestant;
+            }
+          }
+
+          return best;
+        }
+
+        crossover(parent1, parent2) {
+          const crossoverPoint =
+            Math.floor(Math.random() * (parent1.path.length - 2)) + 1;
+          const newPath = [...parent1.path.slice(0, crossoverPoint)];
+
+          for (const location of parent2.path) {
+            if (!newPath.includes(location)) {
+              newPath.push(location);
+            }
+          }
+
+          return new Route(newPath);
+        }
+
+        mutate(route) {
+          const mutationPoint =
+            Math.floor(Math.random() * (route.path.length - 2)) + 1;
+          const currentCity = route.path[mutationPoint].name;
+          const possibleNext = connections.get(currentCity);
+
+          if (possibleNext && possibleNext.length > 0) {
+            const newCity = this.findLocation(
+              possibleNext[Math.floor(Math.random() * possibleNext.length)]
+            );
+            const newPath = [...route.path];
+            newPath[mutationPoint + 1] = newCity;
+
+            // Reconstruct valid path after mutation point
+            const remainingCities = new Set(locations.map((loc) => loc.name));
+            newPath
+              .slice(0, mutationPoint + 2)
+              .forEach((loc) => remainingCities.delete(loc.name));
+
+            while (mutationPoint + 2 < newPath.length) {
+              newPath.pop();
+            }
+
+            // Add path to destination
+            let current = newPath[newPath.length - 1].name;
+            while (current !== "Meerut Bus Stand") {
+              const possible = connections
+                .get(current)
+                .filter((city) => remainingCities.has(city));
+              if (possible.length === 0) break;
+
+              const next =
+                possible[Math.floor(Math.random() * possible.length)];
+              newPath.push(this.findLocation(next));
+              remainingCities.delete(next);
+              current = next;
+            }
+
+            if (current === "Meerut Bus Stand") {
+              return new Route(newPath);
+            }
+          }
+
+          return route;
+        }
+
+        findBestRoute() {
+          return this.population.reduce((best, current) => {
+            // Penalize routes with high traffic segments
+            const trafficPenalty = current.path.reduce(
+              (penalty, loc, index) => {
+                if (index === 0) return penalty;
+                const traffic = trafficConditions.get(
+                  `${current.path[index - 1].name}-${loc.name}`
+                );
+                return penalty + (traffic >= trafficThreshold ? 100 : 0);
+              },
+              0
+            );
+
+            const adjustedTime = current.travelTime + trafficPenalty;
+            return adjustedTime < best.travelTime + trafficPenalty
+              ? current
+              : best;
+          });
+        }
+      }
+
+      let optimizer = null;
+      let animationFrame = null;
+      let generation = 0;
+
+      function startOptimization() {
+        if (animationFrame) {
+          cancelAnimationFrame(animationFrame);
+        }
+
+        optimizer = new RouteOptimizer();
+        generation = 0;
+        document.getElementById("startBtn").disabled = true;
+        animate();
+      }
+
+      function animate() {
+        if (generation < 50) {
+          optimizer.evolve();
+
+          const canvas = document.getElementById("routeCanvas");
+          const ctx = canvas.getContext("2d");
+          const bestRoute = optimizer.bestRoute;
+
+          // Clear canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          canvas.width = canvas.parentElement.clientWidth;
+          canvas.height = canvas.parentElement.clientHeight;
+
+          // Draw all possible connections as light gray lines
+          connections.forEach((connectedCities, fromCity) => {
+            const fromLoc = locations.find((loc) => loc.name === fromCity);
+            connectedCities.forEach((toCity) => {
+              const toLoc = locations.find((loc) => loc.name === toCity);
+              ctx.beginPath();
+              ctx.moveTo(
+                (fromLoc.x * canvas.width) / 800,
+                (fromLoc.y * canvas.height) / 400
+              );
+              ctx.lineTo(
+                (toLoc.x * canvas.width) / 800,
+                (toLoc.y * canvas.height) / 400
+              );
+              ctx.strokeStyle = "#e0e0e0";
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            });
+          });
+
+          // Draw selected route with traffic indicators
+          bestRoute.path.forEach((location, index) => {
+            if (index > 0) {
+              const prevLocation = bestRoute.path[index - 1];
+              const traffic = trafficConditions.get(
+                `${prevLocation.name}-${location.name}`
+              );
+
+              ctx.beginPath();
+              ctx.moveTo(
+                (prevLocation.x * canvas.width) / 800,
+                (prevLocation.y * canvas.height) / 400
+              );
+              ctx.lineTo(
+                (location.x * canvas.width) / 800,
+                (location.y * canvas.height) / 400
+              );
+
+              if (traffic < 0.8) ctx.strokeStyle = "#2ecc71";
+              else if (traffic < 1.2) ctx.strokeStyle = "#f1c40f";
+              else ctx.strokeStyle = "#e74c3c";
+
+              ctx.lineWidth = 3;
+              ctx.stroke();
+            }
+          });
+
+          // Draw cities and labels
+          bestRoute.path.forEach((location) => {
+            ctx.fillStyle = location.isFixed ? "#e74c3c" : "#2c3e50";
+            ctx.beginPath();
+            ctx.arc(
+              (location.x * canvas.width) / 800,
+              (location.y * canvas.height) / 400,
+              6,
+              0,
+              Math.PI * 2
+            );
+            ctx.fill();
+
+            ctx.fillStyle = "#2c3e50";
+            ctx.font = "12px Arial";
+            ctx.fillText(
+              location.name,
+              (location.x * canvas.width) / 800 - 30,
+              (location.y * canvas.height) / 400 - 10
+            );
+          });
+
+          // Update statistics
+          document.getElementById("bestDistance").textContent = `${Math.round(
+            bestRoute.travelTime
+          )} mins`;
+          document.getElementById("currentRoute").textContent = bestRoute.path
+            .map((loc) => loc.name)
+            .join(" → ");
+          document.getElementById(
+            "avoidedSegments"
+          ).textContent = `${bestRoute.avoidedSegments} segments`;
+
+          // Update progress bar
+          document.getElementById("progressBar").style.width = `${
+            (generation / 50) * 100
+          }%`;
+
+          generation++;
+          animationFrame = requestAnimationFrame(animate);
+        } else {
+          document.getElementById("startBtn").disabled = false;
+          cancelAnimationFrame(animationFrame);
+        }
+      }
+
+      // Initialize the application
+      window.addEventListener("load", () => {
+        const canvas = document.getElementById("routeCanvas");
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+
+        initializeTrafficControls();
+        const ctx = canvas.getContext("2d");
+
+        // Draw initial connections
+        connections.forEach((connectedCities, fromCity) => {
+          const fromLoc = locations.find((loc) => loc.name === fromCity);
+          connectedCities.forEach((toCity) => {
+            const toLoc = locations.find((loc) => loc.name === toCity);
+            ctx.beginPath();
+            ctx.moveTo(
+              (fromLoc.x * canvas.width) / 800,
+              (fromLoc.y * canvas.height) / 400
+            );
+            ctx.lineTo(
+              (toLoc.x * canvas.width) / 800,
+              (toLoc.y * canvas.height) / 400
+            );
+            ctx.strokeStyle = "#e0e0e0";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          });
+        });
+
+        // Draw cities and labels
+        locations.forEach((location) => {
+          ctx.fillStyle = location.isFixed ? "#e74c3c" : "#2c3e50";
+          ctx.beginPath();
+          ctx.arc(
+            (location.x * canvas.width) / 800,
+            (location.y * canvas.height) / 400,
+            6,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+
+          ctx.fillStyle = "#2c3e50";
+          ctx.font = "12px Arial";
+          ctx.fillText(
+            location.name,
+            (location.x * canvas.width) / 800 - 30,
+            (location.y * canvas.height) / 400 - 10
+          );
+        });
+      });
+
+      // Add window resize handler
+      window.addEventListener("resize", () => {
+        const canvas = document.getElementById("routeCanvas");
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+
+        if (optimizer && optimizer.bestRoute) {
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Redraw routes with traffic indicators
+          optimizer.bestRoute.path.forEach((location, index) => {
+            if (index > 0) {
+              const prevLocation = optimizer.bestRoute.path[index - 1];
+              const traffic = trafficConditions.get(
+                `${prevLocation.name}-${location.name}`
+              );
+
+              ctx.beginPath();
+              ctx.moveTo(
+                (prevLocation.x * canvas.width) / 800,
+                (prevLocation.y * canvas.height) / 400
+              );
+              ctx.lineTo(
+                (location.x * canvas.width) / 800,
+                (location.y * canvas.height) / 400
+              );
+
+              if (traffic < 0.8) ctx.strokeStyle = "#2ecc71";
+              else if (traffic < 1.2) ctx.strokeStyle = "#f1c40f";
+              else ctx.strokeStyle = "#e74c3c";
+
+              ctx.lineWidth = 3;
+              ctx.stroke();
+            }
+          });
+
+          // Redraw cities and labels
+          optimizer.bestRoute.path.forEach((location) => {
+            ctx.fillStyle = location.isFixed ? "#e74c3c" : "#2c3e50";
+            ctx.beginPath();
+            ctx.arc(
+              (location.x * canvas.width) / 800,
+              (location.y * canvas.height) / 400,
+              6,
+              0,
+              Math.PI * 2
+            );
+            ctx.fill();
+
+            ctx.fillStyle = "#2c3e50";
+            ctx.font = "12px Arial";
+            ctx.fillText(
+              location.name,
+              (location.x * canvas.width) / 800 - 30,
+              (location.y * canvas.height) / 400 - 10
+            );
+          });
+        }
+      });
+    </script>
+  </body>
+</html>
