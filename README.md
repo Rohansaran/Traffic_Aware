@@ -61,7 +61,7 @@ This web application provides an interactive route optimization tool for the Del
 No installation required - this is a standalone HTML file with embedded JavaScript. Simply open the HTML file in any modern web browser.
 
 Usage
-1. Open index.html in your web browser
+1. Open Traffic-Aware.html in your web browser
 
 2. Adjust traffic conditions using the sliders
 
